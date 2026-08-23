@@ -1,0 +1,92 @@
+# 株式スイング・スクリーニング設定
+# すべて仮値。バックテストで調整する前提のため、コードにハードコードせずここで管理する。
+
+universe:
+  # J-Quants /equities/master の ScaleCat でTOPIX500相当に絞る(実測 約493銘柄)
+  scale_categories: ["TOPIX Core30", "TOPIX Large70", "TOPIX Mid400"]
+  min_market_cap: 50_000_000_000          # 時価総額 500億円以上
+  min_avg_trading_value_20d: 500_000_000  # 20営業日平均売買代金 5億円以上
+
+trend:
+  ma25_compare_days_ago: 10   # 25MA上昇判定: 現在 vs 10営業日前
+  ma50_compare_days_ago: 20   # 50MA上昇判定: 現在 vs 20営業日前
+
+pullback:
+  ma5_compare_days_ago: 3     # 5MA下降判定: 現在 vs 3営業日前
+  return_5d_min: -8.0         # 5日騰落率レンジ(%)
+  return_5d_max: -1.0
+
+deviation:
+  ma25_deviation_min: -3.0    # 25MAからの乖離率レンジ(%)
+  ma25_deviation_max: 8.0
+
+rsi:
+  period: 14
+  acceptable_min: 35           # このレンジ外は減点
+  acceptable_max: 50
+  best_min: 40                 # このレンジは特に高評価
+  best_max: 48
+  oversold_threshold: 30       # 下回るとトレンド崩壊の可能性として減点
+  overbought_threshold: 60     # 上回ると調整不足として減点
+
+sector:
+  lookback_days: 20            # 強いセクター判定に使う騰落率の期間
+  strong_percentile: 0.30      # 上位30%を「強いセクター」とする
+
+sector_relative_strength:
+  lookback_days: 20
+  high_threshold: 5.0           # +5%以上で高評価(%)
+  mid_threshold: 2.0            # +2〜5%で加点(%)
+
+market_relative_strength:
+  lookback_days: 20
+  topix_proxy_code: "1306"      # TOPIX連動ETF(NEXT FUNDS TOPIX ETF)で代替
+
+volume_ratio:
+  window_short: 5
+  window_long: 25
+  good_min: 0.6                 # 加点レンジ
+  good_max: 0.9
+  normal_min: 1.0               # 標準レンジ
+  normal_max: 1.5
+  bad_threshold: 2.0            # これ以上は大幅減点
+
+high_60d:
+  lookback_days: 60
+  near_high_ratio: 0.85         # 現在株価 / 60日高値 がこの比率以上なら高評価
+
+rebound:
+  ma5_breakout_bonus: true      # 前日終値<前日5MA かつ 当日終値>当日5MA
+  rsi_reversal_bonus: true      # 当日RSI > 前日RSI
+  volume_reversal_bonus: true   # 株価上昇 + 出来高増加(調整中の出来高減少後)
+
+earnings:
+  exclude_within_business_days: 5   # 決算発表予定日までこの営業日数以内は除外
+
+scoring:
+  weights:
+    ma25_gt_ma50: 10
+    ma25_rising: 10
+    ma50_rising: 5
+    price_gt_ma25: 10
+    ma25_deviation_ok: 10
+    ma5_falling: 10
+    return_5d_ok: 5
+    rsi_good: 10
+    strong_sector: 10
+    sector_relative_strength: 5
+    market_relative_strength: 5
+    volume_decline: 5
+    rebound_signal: 5   # 反発兆候(spec 14表の合計100とは別枠の追加ボーナスとして加点上限を設ける)
+
+required_filters:
+  - min_market_cap
+  - min_avg_trading_value_20d
+  - ma25_gt_ma50
+  - ma25_rising
+  - ma50_rising
+  - ma5_falling
+  - not_near_earnings
+
+output:
+  top_n: 10
