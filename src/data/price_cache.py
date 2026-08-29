@@ -34,8 +34,11 @@ def _download_with_retry(symbols: list[str], start: str, end: str) -> pd.DataFra
         if delay:
             time.sleep(delay)
         try:
+            # auto_adjust=True: 株式分割・配当を調整した価格を使う。
+            # False(未調整)のままだと分割時に価格が不連続になり、リターン計算が破綻する
+            # (実際に8303で分割未調整による桁違いの異常値を検出した)
             return yf.download(
-                symbols, start=start, end=end, group_by="ticker", auto_adjust=False, threads=True, progress=False
+                symbols, start=start, end=end, group_by="ticker", auto_adjust=True, threads=True, progress=False
             )
         except YFRateLimitError as e:
             last_error = e
