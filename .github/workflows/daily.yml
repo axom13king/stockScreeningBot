@@ -2,8 +2,9 @@ name: Daily Screening
 
 on:
   schedule:
-    # 日本時間 16:30 (東証大引け後) = UTC 07:30
-    - cron: "30 7 * * 1-5"
+    # 日本時間 16:17頃(東証大引け後) = UTC 07:17
+    # 毎時0分・30分はリクエストが集中し遅延・間引きされやすいため、あえて半端な分を指定
+    - cron: "17 7 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
