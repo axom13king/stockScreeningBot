@@ -1,9 +1,10 @@
 """日次バッチのエントリポイント(GitHub Actionsから実行する)。
 
 処理の流れ:
-  1. Telegramの新着メッセージを取得し、売買報告をSupabaseへ反映
+  1. Telegramの新着メッセージを取得し、売買報告をSupabaseへ反映(形式が違う場合は案内を返信)
   2. 保有銘柄(未売却分のみ)の現在値・損益率を毎回通知し、売り時ルールに該当すればアラートも添える
   3. スイングスクリーニングを実行し、TOP10候補を通知
+  4. 売買報告の使い方を毎回リマインドとして送信
 """
 
 from datetime import date, timedelta
@@ -24,13 +25,22 @@ from src.storage.supabase_client import (
 )
 
 
+USAGE_GUIDE = (
+    "【使い方】\n"
+    "購入報告: 買 <証券コード4桁> <購入価格> <株数>\n"
+    "  例: 買 7203 2500 100\n"
+    "売却報告: 売 <証券コード4桁> <売却価格>\n"
+    "  例: 売 7203 2600"
+)
+
+
 def process_telegram_reports() -> None:
     offset = get_telegram_offset()
     updates = get_updates(offset=offset + 1)
 
     for update in updates:
         message = update.get("message", {})
-        text = message.get("text", "")
+        text = message.get("text", "").strip()
         report = parse_message(text)
 
         if isinstance(report, BuyReport):
@@ -39,8 +49,15 @@ def process_telegram_reports() -> None:
         elif isinstance(report, SellReport):
             close_holding(report.ticker_code, report.price)
             send_message(f"売却を記録しました: {report.ticker_code} @ {report.price}円")
+        elif text.startswith("買") or text.startswith("売"):
+            # 買/売のつもりだが形式が一致しなかったメッセージには、正しい形式を案内する
+            send_message(f"認識できませんでした。正しい形式で送ってください。\n\n{USAGE_GUIDE}")
 
         set_telegram_offset(update["update_id"])
+
+
+def send_usage_guide() -> None:
+    send_message(USAGE_GUIDE)
 
 
 # 移動平均などの指標計算に十分な日数(直近約80営業日分)を確保する
@@ -111,6 +128,7 @@ def main() -> None:
     process_telegram_reports()
     report_holdings()
     run_swing_screening()
+    send_usage_guide()
 
 
 if __name__ == "__main__":
