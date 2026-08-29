@@ -5,24 +5,39 @@ v2ではv1のリフレッシュトークン/IDトークン方式が廃止され�
 `x-api-key` ヘッダーで送信するだけの方式になっている。
 """
 
+import time
+
 import requests
 
 from src.config import settings
 
 BASE_URL = "https://api.jquants.com/v2"
 
+_RETRY_DELAYS_SECONDS = [5, 15, 30]  # レート制限(429)時のリトライ間隔
+
 
 class JQuantsClient:
     def _headers(self) -> dict:
         return {"x-api-key": settings.jquants_api_key}
+
+    def _get_with_retry(self, path: str, params: dict) -> requests.Response:
+        last_error = None
+        for delay in [0, *_RETRY_DELAYS_SECONDS]:
+            if delay:
+                time.sleep(delay)
+            resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), params=params, timeout=30)
+            if resp.status_code != 429:
+                resp.raise_for_status()
+                return resp
+            last_error = resp
+        last_error.raise_for_status()
 
     def _get_all(self, path: str, params: dict) -> list[dict]:
         """pagination_keyがある限りページングして全件取得する。"""
         results: list[dict] = []
         params = dict(params)
         while True:
-            resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), params=params, timeout=30)
-            resp.raise_for_status()
+            resp = self._get_with_retry(path, params)
             body = resp.json()
             results.extend(body.get("data", []))
             pagination_key = body.get("pagination_key")

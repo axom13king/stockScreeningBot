@@ -9,10 +9,15 @@
 
 from datetime import date, timedelta
 
+import pandas as pd
+
+from src.config import load_swing_config
+from src.data.jquants import JQuantsClient
 from src.data.price_cache import bulk_get_price_history
 from src.holdings.parser import BuyReport, SellReport, parse_message
 from src.holdings.rules import evaluate_sell_signals
 from src.notify.telegram import get_updates, send_long_message, send_message
+from src.screening.swing.indicators import compute_metrics
 from src.screening.swing.runner import run_daily_swing_screening
 from src.storage.supabase_client import (
     close_holding,
@@ -34,9 +39,18 @@ USAGE_GUIDE = (
 )
 
 
+def _lookup_ticker_name(jquants: JQuantsClient, ticker_code: str) -> str | None:
+    try:
+        info = jquants.get_listed_info(code=ticker_code)
+        return info[0]["CoName"] if info else None
+    except Exception:
+        return None
+
+
 def process_telegram_reports() -> None:
     offset = get_telegram_offset()
     updates = get_updates(offset=offset + 1)
+    jquants = JQuantsClient()
 
     for update in updates:
         message = update.get("message", {})
@@ -44,11 +58,15 @@ def process_telegram_reports() -> None:
         report = parse_message(text)
 
         if isinstance(report, BuyReport):
-            insert_holding(report.ticker_code, report.price, report.quantity)
-            send_message(f"購入を記録しました: {report.ticker_code} @ {report.price}円 x{report.quantity}株")
+            ticker_name = _lookup_ticker_name(jquants, report.ticker_code)
+            insert_holding(report.ticker_code, report.price, report.quantity, ticker_name)
+            label = f"{ticker_name}({report.ticker_code})" if ticker_name else report.ticker_code
+            send_message(f"購入を記録しました: {label} @ {report.price}円 x{report.quantity}株")
         elif isinstance(report, SellReport):
+            ticker_name = _lookup_ticker_name(jquants, report.ticker_code)
             close_holding(report.ticker_code, report.price)
-            send_message(f"売却を記録しました: {report.ticker_code} @ {report.price}円")
+            label = f"{ticker_name}({report.ticker_code})" if ticker_name else report.ticker_code
+            send_message(f"売却を記録しました: {label} @ {report.price}円")
         elif text.startswith("買") or text.startswith("売"):
             # 買/売のつもりだが形式が一致しなかったメッセージには、正しい形式を案内する
             send_message(f"認識できませんでした。正しい形式で送ってください。\n\n{USAGE_GUIDE}")
@@ -60,8 +78,8 @@ def send_usage_guide() -> None:
     send_message(USAGE_GUIDE)
 
 
-# 移動平均などの指標計算に十分な日数(直近約80営業日分)を確保する
-_LOOKBACK_DAYS = 120
+# compute_metrics()が要求する最低90営業日分に加え、50MA+20日前比較などの余裕を持たせる
+_LOOKBACK_DAYS = 200
 
 
 def _recent_date_range() -> tuple[str, str]:
@@ -83,6 +101,7 @@ def report_holdings() -> None:
 
     codes = [h["ticker_code"] for h in holdings]
     price_data = bulk_get_price_history(codes, from_date, to_date)
+    swing_cfg = load_swing_config()
 
     lines = [f"【保有銘柄ステータス {date.today().isoformat()}】"]
     for holding in holdings:
@@ -94,19 +113,23 @@ def report_holdings() -> None:
         current_price = float(prices["Close"].iloc[-1])
         pnl_ratio = (current_price - holding["buy_price"]) / holding["buy_price"] * 100
 
+        label = f"{holding['ticker_name']}({holding['ticker_code']})" if holding.get("ticker_name") else holding["ticker_code"]
         line = (
-            f"{holding['ticker_code']}: 現在値{current_price:.0f}円"
-            f"(購入{holding['buy_price']:.0f}円 x{holding['quantity']}株 → {pnl_ratio:+.1f}%)"
+            f"{label}\n"
+            f"現在値: {current_price:.0f}円\n"
+            f"購入: {holding['buy_price']:.0f}円 x{holding['quantity']}株\n"
+            f"損益: {pnl_ratio:+.1f}%"
         )
 
-        signals = evaluate_sell_signals(holding, current_price)
+        metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
+        signals = evaluate_sell_signals(holding, current_price, prices, metrics)
         for signal in signals:
-            line += f"\n  ⚠【売り時アラート】{signal.reason}"
+            line += f"\n⚠【売り時アラート】{signal.reason}"
             insert_notification_log(f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)")
 
         lines.append(line)
 
-    send_long_message("\n".join(lines))
+    send_long_message("\n\n".join(lines))
 
 
 def run_swing_screening() -> None:
