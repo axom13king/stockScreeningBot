@@ -17,7 +17,8 @@ pullback:
   return_5d_max: -1.0
 
 deviation:
-  ma25_deviation_min: -3.0    # 25MAからの乖離率レンジ(%)
+  # バックテストで-5%〜-3%帯が最も成績が良かった(平均+2.40%)ため下限を-3%→-5%に拡大
+  ma25_deviation_min: -5.0    # 25MAからの乖離率レンジ(%)
   ma25_deviation_max: 8.0
 
 rsi:
@@ -26,7 +27,9 @@ rsi:
   acceptable_max: 50
   best_min: 40                 # このレンジは特に高評価
   best_max: 48
-  oversold_threshold: 30       # 下回るとトレンド崩壊の可能性として減点
+  # バックテストでRSI<30が全帯域中で最も成績が良かった(平均+3.85%, 勝率66.1%)ため、
+  # 当初の想定(トレンド崩壊で減点)を覆しbest_min-best_maxと同格の加点対象にしている
+  oversold_threshold: 30
   overbought_threshold: 60     # 上回ると調整不足として減点
 
 sector:
@@ -64,19 +67,26 @@ earnings:
   exclude_within_business_days: 5   # 決算発表予定日までこの営業日数以内は除外
 
 scoring:
+  # 2022-02〜2026-07の9期間・10,621件のバックテストで項目ごとの効果をt検定し、以下の通り調整済み
+  # (詳細は commit "Reweight scoring based on 9-period backtest validation" 参照)
+  #   price_gt_ma25: 有意にマイナス(-1.01pt, p=0.0006) → 10→0
+  #   volume_decline: 有意にマイナス(-0.60pt, p=0.0027) → 5→0
+  #   strong_sector: 有意にプラス(+0.71pt, p=0.0004) → 10→20
+  #   return_5d_ok: 有意にプラス(+0.42pt, p=0.032) → 5→10
+  #   その他の項目は統計的に有意な効果が確認できなかったため変更なし
   weights:
     ma25_gt_ma50: 10
     ma25_rising: 10
     ma50_rising: 5
-    price_gt_ma25: 10
+    price_gt_ma25: 0
     ma25_deviation_ok: 10
     ma5_falling: 10
-    return_5d_ok: 5
+    return_5d_ok: 10
     rsi_good: 10
-    strong_sector: 10
+    strong_sector: 20
     sector_relative_strength: 5
     market_relative_strength: 5
-    volume_decline: 5
+    volume_decline: 0
     rebound_signal: 5   # 反発兆候(spec 14表の合計100とは別枠の追加ボーナスとして加点上限を設ける)
 
 required_filters:

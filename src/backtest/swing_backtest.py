@@ -149,11 +149,32 @@ def run_backtest(start: str, end: str, cfg_override: dict | None = None) -> Back
         for candidate in candidates:
             code = candidate["code"]
             prices = price_data[code]
+            metrics = candidate["metrics"]
+            sector_return_20d = candidate["sector_returns"].get("return_20d")
+            market_return_20d = candidate["market_return_20d"]
+            sector_rel_strength = (
+                metrics["return_20d"] - sector_return_20d
+                if metrics.get("return_20d") is not None and sector_return_20d is not None
+                else None
+            )
+            market_rel_strength = (
+                metrics["return_20d"] - market_return_20d
+                if metrics.get("return_20d") is not None and market_return_20d is not None
+                else None
+            )
             record = {
                 "as_of": as_of.strftime("%Y-%m-%d"),
                 "code": code,
                 "name": candidate["name"],
                 "score": candidate["score_result"].score,
+                "breakdown": dict(candidate["score_result"].breakdown),
+                "rsi": metrics.get("rsi"),
+                "ma25_deviation": metrics.get("ma25_deviation"),
+                "sector_rel_strength": sector_rel_strength,
+                "market_rel_strength": market_rel_strength,
+                "ma5_breakout": metrics.get("ma5_breakout"),
+                "rsi_reversal": metrics.get("rsi_reversal"),
+                "volume_reversal": metrics.get("volume_reversal"),
             }
             for n in FORWARD_WINDOWS:
                 record[f"return_{n}d"] = _forward_return(prices, as_of, n)

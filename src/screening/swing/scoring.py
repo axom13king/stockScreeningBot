@@ -105,11 +105,14 @@ def score_candidate(
     rsi = metrics.get("rsi")
     rcfg = cfg["rsi"]
     if rsi is not None:
-        if rcfg["best_min"] <= rsi <= rcfg["best_max"]:
+        # 9期間・10,621件のバックテストで、RSI<oversold_thresholdは「トレンド崩壊」ではなく
+        # 全帯域中で最も成績が良い(平均+3.85%, 勝率66.1%)ことが判明したため、
+        # 減点ではなく best_min-best_max と同格の加点対象にしている
+        if rsi < rcfg["oversold_threshold"] or rcfg["best_min"] <= rsi <= rcfg["best_max"]:
             breakdown["rsi_good"] = weights["rsi_good"]
+            reasons.append(f"RSI {rsi:.0f}")
         elif rcfg["acceptable_min"] <= rsi <= rcfg["acceptable_max"]:
             breakdown["rsi_good"] = weights["rsi_good"] * 0.5
-        if rcfg["acceptable_min"] <= rsi <= rcfg["acceptable_max"]:
             reasons.append(f"RSI {rsi:.0f}")
 
     if sector_ctx.get("is_strong"):
@@ -135,16 +138,15 @@ def score_candidate(
         breakdown["volume_decline"] = weights["volume_decline"]
         reasons.append("調整中に出来高減少")
 
+    # volume_reversal(出来高反転)はバックテストで有意にマイナス(-0.65pt, p=0.015)と判明したため
+    # スコアリングから除外(想定と逆に、調整中の出来高急増は分配/悪材料のサインである可能性)
     rebound_weight = weights.get("rebound_signal", 0)
     rebound_score = 0.0
     if metrics.get("ma5_breakout"):
-        rebound_score += rebound_weight * 0.4
+        rebound_score += rebound_weight * 0.6
         reasons.append("本日5MAを回復 → 反発兆候あり")
     if metrics.get("rsi_reversal"):
-        rebound_score += rebound_weight * 0.2
-    if metrics.get("volume_reversal"):
         rebound_score += rebound_weight * 0.4
-        reasons.append("出来高が増加に転じ反発の兆し")
     if rebound_score:
         breakdown["rebound_signal"] = rebound_score
 
