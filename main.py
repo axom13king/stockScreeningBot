@@ -2,7 +2,7 @@
 
 処理の流れ:
   1. Telegramの新着メッセージを取得し、売買報告をSupabaseへ反映
-  2. 保有銘柄の現在値を取得し、売り時ルールを評価して通知
+  2. 保有銘柄(未売却分のみ)の現在値・損益率を毎回通知し、売り時ルールに該当すればアラートも添える
   3. スイングスクリーニングを実行し、TOP10候補を通知
 """
 
@@ -52,7 +52,13 @@ def _recent_date_range() -> tuple[str, str]:
     return (today - timedelta(days=_LOOKBACK_DAYS)).isoformat(), today.isoformat()
 
 
-def check_sell_signals() -> None:
+def report_holdings() -> None:
+    """保有銘柄(status='open'のみ)の状況を毎回通知する。
+
+    売却報告(process_telegram_reports経由でstatus='closed'になった銘柄)は
+    get_open_holdings()の対象から自動的に外れるため、実際に売った銘柄への
+    アラートはここで自然に止まる。
+    """
     from_date, to_date = _recent_date_range()
     holdings = get_open_holdings()
     if not holdings:
@@ -61,17 +67,29 @@ def check_sell_signals() -> None:
     codes = [h["ticker_code"] for h in holdings]
     price_data = bulk_get_price_history(codes, from_date, to_date)
 
+    lines = [f"【保有銘柄ステータス {date.today().isoformat()}】"]
     for holding in holdings:
         prices = price_data.get(holding["ticker_code"])
         if prices is None or prices.empty:
+            lines.append(f"{holding['ticker_code']}: 現在値を取得できませんでした")
             continue
+
         current_price = float(prices["Close"].iloc[-1])
+        pnl_ratio = (current_price - holding["buy_price"]) / holding["buy_price"] * 100
+
+        line = (
+            f"{holding['ticker_code']}: 現在値{current_price:.0f}円"
+            f"(購入{holding['buy_price']:.0f}円 x{holding['quantity']}株 → {pnl_ratio:+.1f}%)"
+        )
 
         signals = evaluate_sell_signals(holding, current_price)
         for signal in signals:
-            message = f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)"
-            send_message(message)
-            insert_notification_log(message)
+            line += f"\n  ⚠【売り時アラート】{signal.reason}"
+            insert_notification_log(f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)")
+
+        lines.append(line)
+
+    send_long_message("\n".join(lines))
 
 
 def run_swing_screening() -> None:
@@ -91,7 +109,7 @@ def run_swing_screening() -> None:
 
 def main() -> None:
     process_telegram_reports()
-    check_sell_signals()
+    report_holdings()
     run_swing_screening()
 
 
