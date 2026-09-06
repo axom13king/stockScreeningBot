@@ -103,20 +103,27 @@ def report_holdings() -> None:
     price_data = bulk_get_price_history(codes, from_date, to_date)
     swing_cfg = load_swing_config()
 
-    lines = [f"【保有銘柄ステータス {date.today().isoformat()}】"]
+    # データ提供元(yfinance)の終値確定が大引け直後は間に合わないことがあり、
+    # 前営業日のデータを拾ってしまう場合がある。実際のデータ日付を明示して気づけるようにする。
+    available_dates = [df.index.max() for df in price_data.values() if not df.empty]
+    latest_data_date = max(available_dates).strftime("%Y-%m-%d") if available_dates else "不明"
+
+    lines = [f"【保有銘柄ステータス 株価時点: {latest_data_date}】"]
     for holding in holdings:
         prices = price_data.get(holding["ticker_code"])
         if prices is None or prices.empty:
             lines.append(f"{holding['ticker_code']}: 現在値を取得できませんでした")
             continue
 
+        price_date = prices.index.max().strftime("%Y-%m-%d")
         current_price = float(prices["Close"].iloc[-1])
         pnl_ratio = (current_price - holding["buy_price"]) / holding["buy_price"] * 100
 
         label = f"{holding['ticker_name']}({holding['ticker_code']})" if holding.get("ticker_name") else holding["ticker_code"]
+        stale_note = f"(⚠{price_date}時点、最新でない可能性)" if price_date != latest_data_date else ""
         line = (
             f"{label}\n"
-            f"現在値: {current_price:.0f}円\n"
+            f"現在値: {current_price:.0f}円{stale_note}\n"
             f"購入: {holding['buy_price']:.0f}円 x{holding['quantity']}株\n"
             f"損益: {pnl_ratio:+.1f}%"
         )
