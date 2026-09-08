@@ -29,6 +29,12 @@ def _to_yf_symbol(code: str) -> str:
 
 
 def _download_with_retry(symbols: list[str], start: str, end: str) -> pd.DataFrame:
+    """start/endは共に「その日を含む」前提。yfinance側のendは指定日を含まない(排他的)ため、
+    ここで+1日してから渡す。これを忘れると常に最新日(例えば本日)のデータが1日遅れて取得され、
+    実際の株価と食い違う不具合になる(過去に発生・修正済み)。
+    """
+    yf_end = (pd.Timestamp(end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
     last_error = None
     for delay in [0, *_RETRY_DELAYS_SECONDS]:
         if delay:
@@ -38,7 +44,7 @@ def _download_with_retry(symbols: list[str], start: str, end: str) -> pd.DataFra
             # False(未調整)のままだと分割時に価格が不連続になり、リターン計算が破綻する
             # (実際に8303で分割未調整による桁違いの異常値を検出した)
             return yf.download(
-                symbols, start=start, end=end, group_by="ticker", auto_adjust=True, threads=True, progress=False
+                symbols, start=start, end=yf_end, group_by="ticker", auto_adjust=True, threads=True, progress=False
             )
         except YFRateLimitError as e:
             last_error = e
