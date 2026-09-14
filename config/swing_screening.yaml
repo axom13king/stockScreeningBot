@@ -66,6 +66,16 @@ rebound:
 earnings:
   exclude_within_business_days: 5   # 決算発表予定日までこの営業日数以内は除外
 
+market_risk:
+  # 先物・VIXを使った市場全体のリスクオフ検知。閾値は仮値。
+  nikkei_futures_symbol: "NIY=F"    # CME日経225先物(円建て)
+  sp500_futures_symbol: "ES=F"      # S&P500先物(E-mini)
+  vix_symbol: "^VIX"
+  nikkei_futures_drop_threshold: -2.0   # 前営業日比でこれ以下ならリスクオフ(%)
+  sp500_futures_drop_threshold: -1.5    # 同上(%)
+  vix_level_threshold: 25.0             # VIXがこの水準以上でリスクオフ
+  topix_daily_drop_threshold: -1.5      # 夕方バッチ用: 当日のTOPIX下落率がこれ以下なら新規推奨を抑制(%)
+
 scoring:
   # 2022-02〜2026-07の9期間・10,621件のバックテストで項目ごとの効果をt検定し、以下の通り調整済み
   # (詳細は commit "Reweight scoring based on 9-period backtest validation" 参照)

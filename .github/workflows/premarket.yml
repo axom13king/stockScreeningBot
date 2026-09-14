@@ -1,0 +1,27 @@
+name: Premarket Risk Check
+
+on:
+  schedule:
+    # 日本時間 8:37頃(東証寄り付き9:00の前) = UTC 23:37(前日)
+    # 日経225先物・S&P500先物・VIXを見て、寄り付き前にリスクオフの兆候を検知する
+    - cron: "37 23 * * 0-4"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python premarket_check.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
