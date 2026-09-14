@@ -9,7 +9,12 @@ from datetime import date, timedelta
 
 from src.config import load_swing_config
 from src.data.price_cache import bulk_get_fundamentals, bulk_get_price_history
-from src.screening.market_risk import evaluate_daily_regime, get_market_snapshot
+from src.screening.market_risk import (
+    DAILY_REGIME_MAX_REASONS,
+    evaluate_daily_regime,
+    get_market_snapshot,
+    severity_level,
+)
 from src.screening.swing.pipeline import run_screening
 from src.screening.swing.report import format_report
 from src.screening.swing.universe import build_universe
@@ -51,10 +56,12 @@ def run_daily_swing_screening() -> tuple[str, list[dict]]:
 
     is_risk_off, regime_reasons = evaluate_daily_regime(topix_change_pct, vix_snapshot, cfg)
     if is_risk_off:
+        level = severity_level(regime_reasons)
         reason_text = " / ".join(regime_reasons)
         report = (
-            f"【スイングスクリーニング {as_of.strftime('%Y-%m-%d')}】\n\n"
-            f"⚠️ 本日は地合い悪化のため新規推奨を見送ります。\n{reason_text}"
+            f"【スイングスクリーニング {as_of.strftime('%Y-%m-%d')}: {level}】\n\n"
+            f"本日は地合い悪化のため新規推奨を見送ります。\n"
+            f"該当理由({len(regime_reasons)}/{DAILY_REGIME_MAX_REASONS}件): {reason_text}"
         )
         return report, []
 
