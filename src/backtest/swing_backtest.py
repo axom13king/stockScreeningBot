@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import load_swing_config
+from src.data.fundamentals_cache import bulk_get_statements
 from src.data.price_cache import bulk_get_fundamentals, bulk_get_price_history
 from src.screening.swing.pipeline import run_screening
 from src.screening.swing.universe import build_universe
@@ -140,12 +141,14 @@ def run_backtest(start: str, end: str, cfg_override: dict | None = None) -> Back
         fundamentals[code] = {k: v for k, v in fundamentals[code].items() if k != "next_earnings_date"}
         # バックテストでは決算日の点在データが手に入らないため、決算除外フィルターは適用しない
 
+    statements = bulk_get_statements(codes)
+
     all_dates = sorted(set().union(*[set(df.index) for df in price_data.values() if not df.empty]))
     target_dates = [d for d in all_dates if pd.Timestamp(start) <= d <= pd.Timestamp(end)]
 
     picks = []
     for as_of in target_dates:
-        candidates = run_screening(universe, price_data, topix_prices, fundamentals, as_of, cfg)
+        candidates = run_screening(universe, price_data, topix_prices, fundamentals, as_of, cfg, statements)
         for candidate in candidates:
             code = candidate["code"]
             prices = price_data[code]
@@ -168,6 +171,7 @@ def run_backtest(start: str, end: str, cfg_override: dict | None = None) -> Back
                 "name": candidate["name"],
                 "score": candidate["score_result"].score,
                 "breakdown": dict(candidate["score_result"].breakdown),
+                "close": metrics.get("close"),
                 "rsi": metrics.get("rsi"),
                 "ma25_deviation": metrics.get("ma25_deviation"),
                 "sector_rel_strength": sector_rel_strength,

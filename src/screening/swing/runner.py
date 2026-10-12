@@ -8,6 +8,7 @@
 from datetime import date, timedelta
 
 from src.config import load_swing_config
+from src.data.fundamentals_cache import bulk_get_statements
 from src.data.price_cache import bulk_get_fundamentals, bulk_get_price_history
 from src.screening.market_risk import (
     DAILY_REGIME_MAX_REASONS,
@@ -38,6 +39,7 @@ def run_daily_swing_screening() -> tuple[str, list[dict]]:
     topix_prices = bulk_get_price_history([topix_code], start, end)[topix_code]
 
     fundamentals = bulk_get_fundamentals(codes)
+    statements = bulk_get_statements(codes)
 
     available_dates = [df.index.max() for df in price_data.values() if not df.empty]
     if not available_dates:
@@ -65,6 +67,6 @@ def run_daily_swing_screening() -> tuple[str, list[dict]]:
         )
         return report, []
 
-    candidates = run_screening(universe, price_data, topix_prices, fundamentals, as_of, cfg)
+    candidates = run_screening(universe, price_data, topix_prices, fundamentals, as_of, cfg, statements)
     report = format_report(candidates, as_of.strftime("%Y-%m-%d"))
     return report, candidates

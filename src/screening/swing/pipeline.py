@@ -8,6 +8,7 @@
 import numpy as np
 import pandas as pd
 
+from src.data.fundamentals_cache import extract_eps_bps_roe, latest_statement_as_of
 from src.screening.swing.indicators import compute_metrics
 from src.screening.swing.market import compute_market_return
 from src.screening.swing.scoring import score_candidate
@@ -37,6 +38,7 @@ def run_screening(
     fundamentals_by_code: dict[str, dict],
     as_of: pd.Timestamp,
     cfg: dict,
+    statements_by_code: dict[str, list[dict]] | None = None,
 ) -> list[dict]:
     universe_by_code = {u["code"]: u for u in universe}
 
@@ -66,6 +68,14 @@ def run_screening(
         shares_outstanding = base_fundamentals.get("shares_outstanding")
         if shares_outstanding:
             base_fundamentals["market_cap"] = metrics["close"] * shares_outstanding
+
+        # PBR = 基準日時点の終値 / as_of時点で開示済みだった最新BPS(点在データのため未来の開示は見ない)
+        statements = (statements_by_code or {}).get(code)
+        if statements and metrics.get("close"):
+            stmt = latest_statement_as_of(statements, as_of.strftime("%Y-%m-%d"))
+            _, bps, _ = extract_eps_bps_roe(stmt)
+            if bps and bps > 0:
+                base_fundamentals["pbr"] = metrics["close"] / bps
 
         sector_code = universe_by_code[code]["sector_code"]
         s_ret = sector_returns.get(sector_code, {})

@@ -66,6 +66,11 @@ rebound:
 earnings:
   exclude_within_business_days: 5   # 決算発表予定日までこの営業日数以内は除外
 
+pbr:
+  # J-Quants /fins/summary のBPSと基準日終値から算出(開示がない銘柄は対象外、中立扱い)
+  attractive_threshold: 0.8    # これ未満で満額加点
+  acceptable_threshold: 1.0    # これ未満(attractive以上)で半額加点
+
 market_risk:
   # 先物・VIXを使った市場全体のリスクオフ検知。閾値は仮値。
   nikkei_futures_symbol: "NIY=F"    # CME日経225先物(円建て)
@@ -84,6 +89,12 @@ scoring:
   #   strong_sector: 有意にプラス(+0.71pt, p=0.0004) → 10→20
   #   return_5d_ok: 有意にプラス(+0.42pt, p=0.032) → 5→10
   #   その他の項目は統計的に有意な効果が確認できなかったため変更なし
+  #
+  # pbr_attractive: J-Quants /fins/summary のBPSから算出したPBR(開示データは全体の約16%でのみ取得可)。
+  # 同じ9期間バックテストでPBR<1.0の銘柄群は20日後リターンが有意に良い(加点あり群 平均+3.57%は
+  # 加点なし群 平均+1.77%に対しp<0.0001)。加点0/5/10/15/20で比較し、重みを上げるほど全体の
+  # 成績もわずかに単調改善(20日後勝率 56.7%→57.5%, 平均+1.88%→+1.94%)したため、他の中位項目
+  # (rsi_good, ma25_deviation_ok等)と同等の10で導入。データが取れない銘柄は加点なし(中立)。
   weights:
     ma25_gt_ma50: 10
     ma25_rising: 10
@@ -98,6 +109,7 @@ scoring:
     market_relative_strength: 5
     volume_decline: 0
     rebound_signal: 5   # 反発兆候(spec 14表の合計100とは別枠の追加ボーナスとして加点上限を設ける)
+    pbr_attractive: 10  # PBR割安ボーナス。9期間バックテストでPBR<1.0の銘柄群が有意に好成績(詳細下記)
 
 required_filters:
   - min_market_cap

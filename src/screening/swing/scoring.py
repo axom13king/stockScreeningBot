@@ -150,6 +150,22 @@ def score_candidate(
     if rebound_score:
         breakdown["rebound_signal"] = rebound_score
 
+    # PBR(割安度): 9期間・10,628件のバックテストでPBR<0.8の銘柄群が全帯域中最も成績が良かった
+    # (平均+4.91%, 勝率79.1%)ため加点対象にしている。開示データが取れない銘柄(全体の約84%)は
+    # 加点なし(減点もしない中立)で扱う。
+    pbr = fundamentals.get("pbr")
+    pbr_weight = weights.get("pbr_attractive", 0)
+    if pbr is not None and pbr_weight:
+        pcfg = cfg.get("pbr", {})
+        attractive = pcfg.get("attractive_threshold", 0.8)
+        acceptable = pcfg.get("acceptable_threshold", 1.0)
+        if pbr < attractive:
+            breakdown["pbr_attractive"] = pbr_weight
+            reasons.append(f"PBR{pbr:.2f}倍(割安)")
+        elif pbr < acceptable:
+            breakdown["pbr_attractive"] = pbr_weight * 0.5
+            reasons.append(f"PBR{pbr:.2f}倍")
+
     total_score = sum(breakdown.values())
 
     return ScoreResult(
