@@ -17,13 +17,23 @@ def get_client() -> Client:
 
 
 # --- holdings ---
+# is_test=True は「テストモード」(スクリーニングのTOP10を仮想的に買ったと仮定し、
+# 実際の値動きを追う検証用ポジション)。実際の保有(is_test=False)とは
+# テーブルを共有しつつ is_test で完全に分離して扱う。
 
-def get_open_holdings() -> list[dict]:
-    resp = get_client().table("holdings").select("*").eq("status", "open").execute()
+def get_open_holdings(is_test: bool = False) -> list[dict]:
+    resp = get_client().table("holdings").select("*").eq("status", "open").eq("is_test", is_test).execute()
     return resp.data
 
 
-def insert_holding(ticker_code: str, price: float, quantity: int, ticker_name: str | None = None) -> None:
+def get_closed_holdings(is_test: bool = False) -> list[dict]:
+    resp = get_client().table("holdings").select("*").eq("status", "closed").eq("is_test", is_test).execute()
+    return resp.data
+
+
+def insert_holding(
+    ticker_code: str, price: float, quantity: int, ticker_name: str | None = None, is_test: bool = False
+) -> None:
     get_client().table("holdings").insert(
         {
             "ticker_code": ticker_code,
@@ -32,11 +42,12 @@ def insert_holding(ticker_code: str, price: float, quantity: int, ticker_name: s
             "buy_date": date.today().isoformat(),
             "quantity": quantity,
             "status": "open",
+            "is_test": is_test,
         }
     ).execute()
 
 
-def close_holding(ticker_code: str, sell_price: float) -> None:
+def close_holding(ticker_code: str, sell_price: float, is_test: bool = False) -> None:
     get_client().table("holdings").update(
         {
             "status": "closed",
@@ -44,7 +55,7 @@ def close_holding(ticker_code: str, sell_price: float) -> None:
             "sell_date": date.today().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }
-    ).eq("ticker_code", ticker_code).eq("status", "open").execute()
+    ).eq("ticker_code", ticker_code).eq("status", "open").eq("is_test", is_test).execute()
 
 
 # --- screening history / notification log ---

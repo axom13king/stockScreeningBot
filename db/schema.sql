@@ -13,6 +13,9 @@ create table if not exists screening_conditions (
 );
 
 -- 保有銘柄
+-- is_test=true: テストモード(スクリーニングのTOP10を仮想的に買ったと仮定し、
+-- 実際の値動き・売り時ルールでの検証用。実売買(false)とは is_test で分離するのみで
+-- テーブル・カラムは共有する。
 create table if not exists holdings (
     id bigint generated always as identity primary key,
     ticker_code text not null,
@@ -23,9 +26,13 @@ create table if not exists holdings (
     status text not null default 'open',  -- 'open' | 'closed'
     sell_price numeric,
     sell_date date,
+    is_test boolean not null default false,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+-- 既存のSupabaseプロジェクトに対しては以下を手動実行してカラムを追加する:
+-- alter table holdings add column if not exists is_test boolean not null default false;
 
 -- 日次スクリーニング結果の履歴
 create table if not exists screening_history (

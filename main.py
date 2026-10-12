@@ -16,6 +16,7 @@ from src.data.jquants import JQuantsClient
 from src.data.price_cache import bulk_get_price_history
 from src.holdings.parser import BuyReport, SellReport, parse_message
 from src.holdings.rules import evaluate_sell_signals
+from src.holdings.test_mode import build_test_mode_report
 from src.notify.telegram import get_updates, send_long_message, send_message
 from src.screening.swing.indicators import compute_metrics
 from src.screening.swing.runner import run_daily_swing_screening
@@ -203,6 +204,11 @@ def run_swing_screening() -> None:
             {"score": result.score, "breakdown": result.breakdown, "reasons": result.reasons},
             candidate["metrics"]["close"],
         )
+
+    test_report = build_test_mode_report(candidates)
+    if test_report:
+        send_long_message(test_report)
+        insert_notification_log(test_report)
 
 
 def main() -> None:
