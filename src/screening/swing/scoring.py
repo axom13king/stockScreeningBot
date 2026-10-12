@@ -73,16 +73,16 @@ def score_candidate(
     breakdown: dict[str, float] = {}
     reasons: list[str] = []
 
+    # ma25_gt_ma50/ma50_rising/ma25_deviation_ok/ma5_falling/rsi_goodは必須フィルターと
+    # 表示欄(現在値の行)の数値で既にわかるため、理由欄には差別化情報のみを載せる(文章量削減)。
     if metrics["ma25"] and metrics["ma50"] and metrics["ma25"] > metrics["ma50"]:
         breakdown["ma25_gt_ma50"] = weights["ma25_gt_ma50"]
-        reasons.append("25MAが50MAを上回る中期上昇トレンド")
 
     if metrics["ma25"] and metrics["ma25_prev"] and metrics["ma25"] > metrics["ma25_prev"]:
         breakdown["ma25_rising"] = weights["ma25_rising"]
 
     if metrics["ma50"] and metrics["ma50_prev"] and metrics["ma50"] > metrics["ma50_prev"]:
         breakdown["ma50_rising"] = weights["ma50_rising"]
-        reasons.append("25MA/50MAともに上昇")
 
     if metrics["close"] and metrics["ma25"] and metrics["close"] > metrics["ma25"]:
         breakdown["price_gt_ma25"] = weights["price_gt_ma25"]
@@ -91,7 +91,6 @@ def score_candidate(
     dcfg = cfg["deviation"]
     if dev is not None and dcfg["ma25_deviation_min"] <= dev <= dcfg["ma25_deviation_max"]:
         breakdown["ma25_deviation_ok"] = weights["ma25_deviation_ok"]
-        reasons.append(f"25MA乖離率{dev:+.1f}%")
 
     if metrics["ma5"] and metrics["ma5_prev"] and metrics["ma5"] < metrics["ma5_prev"]:
         breakdown["ma5_falling"] = weights["ma5_falling"]
@@ -110,10 +109,8 @@ def score_candidate(
         # 減点ではなく best_min-best_max と同格の加点対象にしている
         if rsi < rcfg["oversold_threshold"] or rcfg["best_min"] <= rsi <= rcfg["best_max"]:
             breakdown["rsi_good"] = weights["rsi_good"]
-            reasons.append(f"RSI {rsi:.0f}")
         elif rcfg["acceptable_min"] <= rsi <= rcfg["acceptable_max"]:
             breakdown["rsi_good"] = weights["rsi_good"] * 0.5
-            reasons.append(f"RSI {rsi:.0f}")
 
     if sector_ctx.get("is_strong"):
         breakdown["strong_sector"] = weights["strong_sector"]
