@@ -21,6 +21,7 @@ from src.screening.swing.indicators import compute_metrics
 from src.screening.swing.runner import run_daily_swing_screening
 from src.storage.supabase_client import (
     close_holding,
+    get_client,
     get_open_holdings,
     get_telegram_offset,
     insert_holding,
@@ -87,6 +88,48 @@ def _recent_date_range() -> tuple[str, str]:
     return (today - timedelta(days=_LOOKBACK_DAYS)).isoformat(), today.isoformat()
 
 
+def _consecutive_alert_days(ticker_code: str, lookback_days: int = 30) -> int:
+    """この銘柄の売り時アラートが何日連続で出ているかを通知ログから数える。
+
+    土日・祝日をまたいでも連続とみなすため、直近のアラート日から遡って
+    「前回アラート日との間が3日以内」なら連続扱いにする(例: 金曜に出て月曜も出れば連続)。
+    同じ警告が何日も繰り返されているのに気づきにくい、という問題に対応するため、
+    エスカレーション表示の根拠として使う。
+    """
+    since = (date.today() - timedelta(days=lookback_days)).isoformat()
+    resp = (
+        get_client()
+        .table("notification_log")
+        .select("sent_at")
+        .gte("sent_at", since)
+        .like("message", f"%売り時アラート】{ticker_code}:%")
+        .order("sent_at")
+        .execute()
+    )
+    alert_dates = sorted({row["sent_at"][:10] for row in resp.data})
+    if not alert_dates:
+        return 0
+
+    streak = 1
+    for i in range(len(alert_dates) - 1, 0, -1):
+        prev = date.fromisoformat(alert_dates[i - 1])
+        curr = date.fromisoformat(alert_dates[i])
+        if (curr - prev).days <= 3:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _escalation_prefix(streak_days: int) -> str:
+    """連続日数に応じて警告の強さを変える(1〜2日=通常、3〜6日=警戒、7日以上=強い警戒)。"""
+    if streak_days >= 7:
+        return f"🔴【{streak_days}日連続】"
+    if streak_days >= 3:
+        return f"🔶【{streak_days}日連続】"
+    return "⚠"
+
+
 def report_holdings() -> None:
     """保有銘柄(status='open'のみ)の状況を毎回通知する。
 
@@ -130,9 +173,17 @@ def report_holdings() -> None:
 
         metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
         signals = evaluate_sell_signals(holding, current_price, prices, metrics)
-        for signal in signals:
-            line += f"\n⚠【売り時アラート】{signal.reason}"
-            insert_notification_log(f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)")
+        if signals:
+            for signal in signals:
+                insert_notification_log(f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)")
+
+            # 連続日数を見て警告を強める(同じアラートが何日も続いていることに気づきにくい問題への対応)
+            streak_days = _consecutive_alert_days(holding["ticker_code"])
+            prefix = _escalation_prefix(streak_days)
+            for signal in signals:
+                line += f"\n{prefix}【売り時アラート】{signal.reason}"
+            if streak_days >= 3:
+                line += f"\n　→ {streak_days}日連続でシグナルが続いています。対応を検討してください"
 
         lines.append(line)
 
