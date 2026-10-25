@@ -172,8 +172,13 @@ def report_holdings() -> None:
             f"損益: {pnl_ratio:+.1f}%"
         )
 
-        metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
-        signals = evaluate_sell_signals(holding, current_price, prices, metrics)
+        # 購入当日は売り時判定をスキップする。買った報告を処理した直後の同一バッチ内で
+        # RSI過熱(70以上)等に該当すると、買ったばかりなのに売り時アラートが出てしまうため。
+        if holding["buy_date"] == date.today().isoformat():
+            signals = []
+        else:
+            metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
+            signals = evaluate_sell_signals(holding, current_price, prices, metrics)
         if signals:
             for signal in signals:
                 insert_notification_log(f"【売り時アラート】{signal.ticker_code}: {signal.reason} (現在値 {current_price}円)")

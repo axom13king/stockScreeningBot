@@ -91,8 +91,14 @@ def build_test_mode_report(candidates: list[dict]) -> str:
         label = f"{holding['ticker_name']}({code})" if holding.get("ticker_name") else code
         line = f"{label}: {current_price:.0f}円 ({pnl_ratio:+.1f}%) 購入日{holding['buy_date']}"
 
-        metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
-        signals = evaluate_sell_signals(holding, current_price, prices, metrics)
+        # 購入当日は売り時判定をスキップする。TOP10入りした時点でRSIが既に70以上
+        # (加点対象の40〜48と過熱判定の70以上は別の閾値のため両立しうる)だと、
+        # 購入直後の同一バッチ内で即時決済され、0%の空振り取引が記録されてしまうため。
+        if holding["buy_date"] == date.today().isoformat():
+            signals = []
+        else:
+            metrics = compute_metrics(prices, pd.Timestamp(prices.index[-1]), swing_cfg)
+            signals = evaluate_sell_signals(holding, current_price, prices, metrics)
         if signals:
             close_holding(code, current_price, is_test=True)
             reasons = " / ".join(s.reason for s in signals)
