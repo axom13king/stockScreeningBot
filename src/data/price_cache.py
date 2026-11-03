@@ -22,6 +22,8 @@ FUNDAMENTALS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 FUNDAMENTALS_TTL_SECONDS = 7 * 24 * 3600  # 週1回程度の更新で十分(発行済株式数・決算予定日)
 _RETRY_DELAYS_SECONDS = [5, 15, 30]  # レート制限時のリトライ間隔
+_OVERLAP_DAYS = 7               # 差分取得時に既存キャッシュと重ねる日数(分割検知用)
+_ADJUSTMENT_TOLERANCE = 0.02    # 重なり部分の終値がこれ以上ずれていたら分割等とみなし全期間取り直す
 
 
 def _to_yf_symbol(code: str) -> str:
@@ -76,45 +78,71 @@ def bulk_get_price_history(codes: list[str], start: str, end: str, refresh: bool
             if cached_start <= start and cached_end >= end:
                 result[code] = cached.loc[start:end]
                 continue
-            fetch_start = start if cached_start > start else (cached.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            # 既存の末尾と重ねて取得し、株式分割で過去の調整後株価が変わっていないか後で照合する
+            fetch_start = start if cached_start > start else (cached.index.max() - pd.Timedelta(days=_OVERLAP_DAYS)).strftime("%Y-%m-%d")
         else:
             fetch_start = start
 
         cached_by_code[code] = cached
         fetch_groups.setdefault(fetch_start, []).append(code)
 
+    split_detected: list[str] = []
     for fetch_start, group_codes in fetch_groups.items():
         if fetch_start > end:
             for code in group_codes:
                 result[code] = cached_by_code[code].loc[start:end]
             continue
 
-        symbols = [_to_yf_symbol(c) for c in group_codes]
-        raw = _download_with_retry(symbols, fetch_start, end)
-
+        raw = _download_with_retry([_to_yf_symbol(c) for c in group_codes], fetch_start, end)
         for code in group_codes:
-            symbol = _to_yf_symbol(code)
-            try:
-                df = raw[symbol] if isinstance(raw.columns, pd.MultiIndex) else raw
-            except KeyError:
-                df = pd.DataFrame()
-            df = df.dropna(how="all")
-            if not df.empty and df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
-
+            df = _extract(raw, code)
             existing = cached_by_code[code]
+            if not existing.empty and _adjustment_changed(existing, df):
+                split_detected.append(code)
+                continue
             if not existing.empty:
                 combined = pd.concat([existing, df])
                 combined = combined[~combined.index.duplicated(keep="last")].sort_index()
             else:
                 combined = df
-
-            _price_cache_path(code).parent.mkdir(parents=True, exist_ok=True)
-            if not combined.empty:
-                combined.to_parquet(_price_cache_path(code))
+            _save(code, combined)
             result[code] = combined.loc[start:end] if not combined.empty else combined
 
+    # 分割等で過去の調整後株価が変わった銘柄は、古い基準の行を残さないよう全期間を取り直す
+    if split_detected:
+        full_start = min([start] + [cached_by_code[c].index.min().strftime("%Y-%m-%d") for c in split_detected])
+        raw = _download_with_retry([_to_yf_symbol(c) for c in split_detected], full_start, end)
+        for code in split_detected:
+            df = _extract(raw, code)
+            _save(code, df)
+            result[code] = df.loc[start:end] if not df.empty else df
+
     return result
+
+
+def _extract(raw: pd.DataFrame, code: str) -> pd.DataFrame:
+    try:
+        df = raw[_to_yf_symbol(code)] if isinstance(raw.columns, pd.MultiIndex) else raw
+    except KeyError:
+        return pd.DataFrame()
+    df = df.dropna(how="all")
+    if not df.empty and df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    return df
+
+
+def _adjustment_changed(existing: pd.DataFrame, fresh: pd.DataFrame) -> bool:
+    overlap = existing.index.intersection(fresh.index)
+    if len(overlap) == 0:
+        return False
+    ratio = (fresh.loc[overlap, "Close"] / existing.loc[overlap, "Close"]).median()
+    return abs(ratio - 1) > _ADJUSTMENT_TOLERANCE
+
+
+def _save(code: str, df: pd.DataFrame) -> None:
+    _price_cache_path(code).parent.mkdir(parents=True, exist_ok=True)
+    if not df.empty:
+        df.to_parquet(_price_cache_path(code))
 
 
 def _fundamentals_cache_path(code: str) -> Path:

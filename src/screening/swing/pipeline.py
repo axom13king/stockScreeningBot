@@ -8,7 +8,7 @@
 import numpy as np
 import pandas as pd
 
-from src.data.fundamentals_cache import extract_eps_bps_roe, latest_statement_as_of
+from src.data.fundamentals_cache import latest_book_equity_as_of
 from src.screening.swing.indicators import compute_metrics
 from src.screening.swing.market import compute_market_return
 from src.screening.swing.scoring import score_candidate
@@ -69,13 +69,13 @@ def run_screening(
         if shares_outstanding:
             base_fundamentals["market_cap"] = metrics["close"] * shares_outstanding
 
-        # PBR = 基準日時点の終値 / as_of時点で開示済みだった最新BPS(点在データのため未来の開示は見ない)
+        # PBR = 時価総額 / as_of時点で開示済みだった最新の自己資本(未来の開示は見ない)。
+        # 終値/BPSで計算すると、分割後基準の調整後株価と分割前基準のBPSが混ざり大きく歪むため総額で比べる
         statements = (statements_by_code or {}).get(code)
-        if statements and metrics.get("close"):
-            stmt = latest_statement_as_of(statements, as_of.strftime("%Y-%m-%d"))
-            _, bps, _ = extract_eps_bps_roe(stmt)
-            if bps and bps > 0:
-                base_fundamentals["pbr"] = metrics["close"] / bps
+        if statements and base_fundamentals.get("market_cap"):
+            equity = latest_book_equity_as_of(statements, as_of.strftime("%Y-%m-%d"))
+            if equity and equity > 0:
+                base_fundamentals["pbr"] = base_fundamentals["market_cap"] / equity
 
         sector_code = universe_by_code[code]["sector_code"]
         s_ret = sector_returns.get(sector_code, {})
@@ -106,4 +106,17 @@ def run_screening(
         )
 
     results.sort(key=lambda r: r["score_result"].score, reverse=True)
-    return results[: cfg["output"]["top_n"]]
+
+    # 同一セクターへの集中(例: 海運3社を同時に買う)を避ける。バックテストで成績を落とさずに
+    # 分散できることを確認済み
+    max_per_sector = cfg["output"].get("max_per_sector")
+    selected, per_sector = [], {}
+    for r in results:
+        sector_code = universe_by_code[r["code"]]["sector_code"]
+        if max_per_sector and per_sector.get(sector_code, 0) >= max_per_sector:
+            continue
+        selected.append(r)
+        per_sector[sector_code] = per_sector.get(sector_code, 0) + 1
+        if len(selected) >= cfg["output"]["top_n"]:
+            break
+    return selected

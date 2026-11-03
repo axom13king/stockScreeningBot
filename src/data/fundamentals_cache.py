@@ -52,26 +52,28 @@ def bulk_get_statements(codes: list[str], refresh: bool = False, max_workers: in
     return result
 
 
-def latest_statement_as_of(statements: list[dict], as_of_date: str) -> dict | None:
-    """as_of_date時点で既に開示済みだった、最新の財務情報を返す(未来の開示は参照しない)。"""
-    candidates = [s for s in statements if s.get("DiscDate") and s["DiscDate"] <= as_of_date]
-    if not candidates:
+def _to_float(value) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
         return None
-    return max(candidates, key=lambda s: s["DiscDate"])
 
 
-def extract_eps_bps_roe(statement: dict | None) -> tuple[float | None, float | None, float | None]:
-    """EPS/BPS/ROEを取り出す。連結値が空なら単体値(NCEPS/NCBPS)にフォールバックする。"""
-    if statement is None:
-        return None, None, None
+def latest_book_equity_as_of(statements: list[dict], as_of_date: str) -> float | None:
+    """as_of時点で開示済みの最新の自己資本(BPS x 期末自己株式控除後の株式数)を返す。
 
-    def _to_float(value):
-        try:
-            return float(value) if value not in (None, "") else None
-        except (TypeError, ValueError):
-            return None
-
-    eps = _to_float(statement.get("EPS")) or _to_float(statement.get("NCEPS"))
-    bps = _to_float(statement.get("BPS")) or _to_float(statement.get("NCBPS"))
-    roe = _to_float(statement.get("ROE")) or _to_float(statement.get("NCROE"))
-    return eps, bps, roe
+    BPSは本決算(FY)にしか載らないことが多いため、BPSのある開示まで遡る。
+    また株価(yfinanceの調整後株価)とBPSは株式分割で1株の基準がずれるため、
+    PBRは1株あたりではなく「時価総額 / 自己資本」で比べる前提で総額を返す。
+    """
+    candidates = sorted(
+        (s for s in statements if s.get("DiscDate") and s["DiscDate"] <= as_of_date),
+        key=lambda s: s["DiscDate"],
+        reverse=True,
+    )
+    for s in candidates:
+        bps = _to_float(s.get("BPS")) or _to_float(s.get("NCBPS"))
+        shares = _to_float(s.get("ShOutFY"))
+        if bps and bps > 0 and shares:
+            return bps * (shares - (_to_float(s.get("TrShFY")) or 0))
+    return None

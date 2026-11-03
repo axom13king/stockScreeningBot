@@ -147,9 +147,8 @@ def score_candidate(
     if rebound_score:
         breakdown["rebound_signal"] = rebound_score
 
-    # PBR(割安度): 9期間・10,628件のバックテストでPBR<0.8の銘柄群が全帯域中最も成績が良かった
-    # (平均+4.91%, 勝率79.1%)ため加点対象にしている。開示データが取れない銘柄(全体の約84%)は
-    # 加点なし(減点もしない中立)で扱う。
+    # PBR(割安度): 根拠は config/swing_screening.yaml の pbr_attractive のコメント参照。
+    # BPSが取れない銘柄は加点なし(減点もしない中立)で扱う。
     pbr = fundamentals.get("pbr")
     pbr_weight = weights.get("pbr_attractive", 0)
     if pbr is not None and pbr_weight:

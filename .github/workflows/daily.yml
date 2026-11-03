@@ -18,9 +18,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .cache
-          key: swing-cache-${{ github.run_id }}
+          # v2: 株式分割で分割前後の基準が混ざった旧キャッシュを捨てるために世代を上げた
+          key: swing-cache-v2-${{ github.run_id }}
           restore-keys: |
-            swing-cache-
+            swing-cache-v2-
 
       - run: pip install -r requirements.txt
 
